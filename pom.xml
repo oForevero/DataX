@@ -47,7 +47,7 @@
         <module>transformer</module>
 
         <!-- reader -->
-        <module>mysqlreader</module>
+        <!--<module>mysqlreader</module>
         <module>drdsreader</module>
         <module>sqlserverreader</module>
         <module>postgresqlreader</module>
@@ -81,23 +81,23 @@
         <module>datahubreader</module>
         <module>starrocksreader</module>
 
-        <!-- writer -->
+        &lt;!&ndash; writer &ndash;&gt;
         <module>mysqlwriter</module>
         <module>starrockswriter</module>
         <module>drdswriter</module>
         <module>databendwriter</module>
         <module>oraclewriter</module>
-        <module>sqlserverwriter</module>
+        <module>sqlserverwriter</module>-->
         <module>postgresqlwriter</module>
-        <module>kingbaseeswriter</module>
-        <module>adswriter</module>
+        <!--<module>kingbaseeswriter</module>-->
+        <!--<module>adswriter</module>
         <module>oceanbasev10writer</module>
         <module>adbpgwriter</module>
         <module>hologresjdbcwriter</module>
-        <module>rdbmswriter</module>
+        <module>rdbmswriter</module>-->
 
 
-        <module>odpswriter</module>
+        <!--<module>odpswriter</module>
         <module>osswriter</module>
         <module>otswriter</module>
         <module>hbase11xwriter</module>
@@ -108,9 +108,9 @@
         <module>ftpwriter</module>
         <module>hdfswriter</module>
         <module>txtfilewriter</module>
-        <module>streamwriter</module>
+        <module>streamwriter</module>-->
 
-        <module>elasticsearchwriter</module>
+        <!--<module>elasticsearchwriter</module>
         <module>mongodbwriter</module>
         <module>tdenginewriter</module>
         <module>ocswriter</module>
@@ -126,12 +126,12 @@
         <module>adbmysqlwriter</module>
         <module>neo4jwriter</module>
 
-        <!-- common support module -->
+        &lt;!&ndash; common support module &ndash;&gt;-->
         <module>plugin-rdbms-util</module>
-        <module>plugin-unstructured-storage-util</module>
+        <!--<module>plugin-unstructured-storage-util</module>
         <module>gaussdbreader</module>
         <module>gaussdbwriter</module>
-        <module>datax-example</module>
+        <module>datax-example</module>-->
 
     </modules>
 
