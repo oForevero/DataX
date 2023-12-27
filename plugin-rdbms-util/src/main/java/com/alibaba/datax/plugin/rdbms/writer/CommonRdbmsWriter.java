@@ -12,16 +12,14 @@ import com.alibaba.datax.plugin.rdbms.util.DataBaseType;
 import com.alibaba.datax.plugin.rdbms.util.RdbmsException;
 import com.alibaba.datax.plugin.rdbms.writer.util.OriginalConfPretreatmentUtil;
 import com.alibaba.datax.plugin.rdbms.writer.util.WriterUtil;
+
+import java.sql.*;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Triple;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.SQLException;
-import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -239,8 +237,14 @@ public class CommonRdbmsWriter {
             writeMode = writerSliceConfig.getString(Key.WRITE_MODE, "INSERT");
             emptyAsNull = writerSliceConfig.getBool(Key.EMPTY_AS_NULL, true);
             INSERT_OR_REPLACE_TEMPLATE = writerSliceConfig.getString(Constant.INSERT_OR_REPLACE_TEMPLATE_MARK);
-            this.writeRecordSql = String.format(INSERT_OR_REPLACE_TEMPLATE, this.table);
-
+            LOG.info("isUpdate: {}, hasParam {}", writeMode.startsWith("update"),writeMode.trim().length() > 8);
+            //大于8则代表存在额外参数
+            if(writeMode.startsWith("update") && writeMode.trim().length() > 8){
+                this.writeRecordSql = String.format(INSERT_OR_REPLACE_TEMPLATE, this.table, this.table, this.table);
+            }else {
+                this.writeRecordSql = String.format(INSERT_OR_REPLACE_TEMPLATE, this.table);
+            }
+            LOG.info("sql:{}", this.writeRecordSql);
             BASIC_MESSAGE = String.format("jdbcUrl:[%s], table:[%s]",
                     this.jdbcUrl, this.table);
         }
@@ -292,13 +296,23 @@ public class CommonRdbmsWriter {
                     bufferBytes += record.getMemorySize();
 
                     if (writeBuffer.size() >= batchSize || bufferBytes >= batchByteSize) {
-                        doBatchInsert(connection, writeBuffer);
+                        boolean isUpdate = writeMode.startsWith("update") && writeMode.trim().length() > 8;
+                        if(isUpdate){
+                            doBatchInsertOrUpdate(connection, writeBuffer);
+                        }else {
+                            doBatchInsert(connection, writeBuffer);
+                        }
                         writeBuffer.clear();
                         bufferBytes = 0;
                     }
                 }
                 if (!writeBuffer.isEmpty()) {
-                    doBatchInsert(connection, writeBuffer);
+                    boolean isUpdate = writeMode.startsWith("update") && writeMode.trim().length() > 8;
+                    if(isUpdate){
+                        doBatchInsertOrUpdate(connection, writeBuffer);
+                    }else {
+                        doBatchInsert(connection, writeBuffer);
+                    }
                     writeBuffer.clear();
                     bufferBytes = 0;
                 }
@@ -352,7 +366,6 @@ public class CommonRdbmsWriter {
                 connection.setAutoCommit(false);
                 preparedStatement = connection
                         .prepareStatement(this.writeRecordSql);
-
                 for (Record record : buffer) {
                     preparedStatement = fillPreparedStatement(
                             preparedStatement, record);
@@ -369,6 +382,58 @@ public class CommonRdbmsWriter {
                         DBUtilErrorCode.WRITE_DATA_ERROR, e);
             } finally {
                 DBUtil.closeDBResources(preparedStatement, null);
+            }
+        }
+
+        /**
+         * update时会执行三段sql
+         * @param connection
+         * @param buffer
+         * @throws SQLException
+         */
+        protected void doBatchInsertOrUpdate(Connection connection, List<Record> buffer)
+                throws SQLException {
+            PreparedStatement selectStatement = null,insertStatement = null,updateStatement = null;
+            try {
+                //截取 | 作为三段sql
+                String[] sql = this.writeRecordSql.split("\\|");
+                connection.setAutoCommit(false);
+                selectStatement = connection.prepareStatement(sql[0]);
+                updateStatement = connection.prepareStatement(sql[1]);
+                insertStatement = connection.prepareStatement(sql[2]);
+                boolean isUpdate = writeMode.startsWith("update") && writeMode.trim().length() > 8;
+                for (Record record : buffer) {
+                    LOG.info("执行更新 {}", record);
+                    selectStatement = fillUpdatePreparedStatement(selectStatement, record, 0);
+                    ResultSet resultSet = selectStatement.executeQuery();
+                    //是否查询到值，查询到则更新，反之插入
+                    if(resultSet.next()){
+                        LOG.info("存在查询值：{}",resultSet);
+                        updateStatement = fillUpdatePreparedStatement(updateStatement, record, 1);
+                        updateStatement.executeUpdate();
+                    }else{
+                        LOG.info("无查询值，直接insert");
+                        insertStatement = fillUpdatePreparedStatement(insertStatement, record, 2);
+                        insertStatement.execute();
+                    }
+                }
+                //非更新执行batchinsert
+                if(!isUpdate) {
+                    insertStatement.executeBatch();
+                }
+                connection.commit();
+            } catch (SQLException e) {
+                LOG.warn("回滚此次写入, 采用每次写入一行方式提交. 因为:" + e.getMessage());
+                connection.rollback();
+                doOneInsert(connection, buffer);
+            } catch (Exception e) {
+                throw DataXException.asDataXException(
+                        DBUtilErrorCode.WRITE_DATA_ERROR, e);
+            } finally {
+                DBUtil.closeDBResources(selectStatement, null);
+                DBUtil.closeDBResources(insertStatement, null);
+                DBUtil.closeDBResources(updateStatement, null);
+
             }
         }
 
@@ -416,13 +481,78 @@ public class CommonRdbmsWriter {
                 String typeName = this.resultSetMetaData.getRight().get(i);
                 preparedStatement = fillPreparedStatementColumnType(preparedStatement, i, columnSqltype, typeName, record.getColumn(i));
             }
+            return preparedStatement;
+        }
 
+        /**
+         * 执行更新statement 方法设置
+         * @param preparedStatement 预处理对象
+         * @param record 参数
+         * @param state 获取参数类型，0为查询是否存在, 1为获取更新参数, 2为获取插入参数
+         * @return
+         * @throws SQLException
+         */
+        protected PreparedStatement fillUpdatePreparedStatement(PreparedStatement preparedStatement, Record record, int state) throws SQLException{
+            //设置查询条件参数
+            String[] updateColumn = WriterUtil.getUpdateColumn(writeMode);
+            LOG.info("columnNType {}", this.resultSetMetaData);
+            switch (state){
+                case 0:
+                    int index = 0;
+                    for (String columnName : updateColumn) {
+                        int i = this.resultSetMetaData.getLeft().indexOf(columnName);
+                        if(i == -1){
+                            continue;
+                        }
+                        LOG.info("columnName: {} index: {}", columnName, i);
+                        int columnSqltype = this.resultSetMetaData.getMiddle().get(i);
+                        String typeName = this.resultSetMetaData.getRight().get(i);
+                        LOG.info("type: {} name: {} value: {}", columnSqltype, typeName, record.getColumn(i));
+                        preparedStatement = fillPreparedStatementColumnType(preparedStatement, index, columnSqltype, typeName, record.getColumn(i));
+                        index++;
+                    }
+                    break;
+                case 1:
+                    for (int i = 0; i < this.columnNumber; i++) {
+                        int columnSqltype = this.resultSetMetaData.getMiddle().get(i);
+                        String typeName = this.resultSetMetaData.getRight().get(i);
+                        LOG.info("type: {} name: {} value: {}", columnSqltype, typeName, record.getColumn(i));
+                        preparedStatement = fillPreparedStatementColumnType(preparedStatement, i, columnSqltype, typeName, record.getColumn(i));
+                    }
+                    index = this.columnNumber;
+                    //设置where 参数
+                    for (String columnName : updateColumn) {
+                        int i = this.resultSetMetaData.getLeft().indexOf(columnName);
+                        if(i == -1){
+                            continue;
+                        }
+                        LOG.info("columnName: {} index: {}", columnName, i);
+                        int columnSqltype = this.resultSetMetaData.getMiddle().get(i);
+                        String typeName = this.resultSetMetaData.getRight().get(i);
+                        LOG.info("type: {} name: {} value: {}", columnSqltype, typeName, record.getColumn(i));
+                        preparedStatement = fillPreparedStatementColumnType(preparedStatement, index, columnSqltype, typeName, record.getColumn(i));
+                        index++;
+                    }
+                    break;
+                case 2:
+                    for (int i = 0; i < this.columnNumber; i++) {
+                        int columnSqltype = this.resultSetMetaData.getMiddle().get(i);
+                        String typeName = this.resultSetMetaData.getRight().get(i);
+                        LOG.info("type: {} name: {} value: {}", columnSqltype, typeName, record.getColumn(i));
+                        preparedStatement = fillPreparedStatementColumnType(preparedStatement, i, columnSqltype, typeName, record.getColumn(i));
+                    }
+                    break;
+                default:
+                    break;
+            }
             return preparedStatement;
         }
 
         protected PreparedStatement fillPreparedStatementColumnType(PreparedStatement preparedStatement, int columnIndex,
                                                                     int columnSqltype, String typeName, Column column) throws SQLException {
             java.util.Date utilDate;
+            //TODO 执行时会出错，明天检查
+            LOG.info("column：{}", column);
             switch (columnSqltype) {
                 case Types.CHAR:
                 case Types.NCHAR:
@@ -555,6 +685,7 @@ public class CommonRdbmsWriter {
                                             this.resultSetMetaData.getRight()
                                                     .get(columnIndex)));
             }
+            LOG.info("prepareStatement info => {}", preparedStatement);
             return preparedStatement;
         }
 
@@ -571,9 +702,14 @@ public class CommonRdbmsWriter {
                 if (dataBaseType != null && dataBaseType == DataBaseType.MySql && OriginalConfPretreatmentUtil.isOB10(jdbcUrl)) {
                     forceUseUpdate = true;
                 }
-
                 INSERT_OR_REPLACE_TEMPLATE = WriterUtil.getWriteTemplate(columns, valueHolders, writeMode, dataBaseType, forceUseUpdate);
-                writeRecordSql = String.format(INSERT_OR_REPLACE_TEMPLATE, this.table);
+                //大于8则代表存在额外参数，datax只负责处理，默认传递过来的一定是正确的
+                if(writeMode.startsWith("update") && writeMode.trim().length() > 8){
+                    writeRecordSql = StringUtils.replace(INSERT_OR_REPLACE_TEMPLATE,"%s",this.table);
+                }
+                else{
+                    writeRecordSql = String.format(INSERT_OR_REPLACE_TEMPLATE, this.table);
+                }
             }
         }
 

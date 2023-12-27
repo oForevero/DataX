@@ -49,15 +49,15 @@
         <!-- reader -->
         <!--<module>mysqlreader</module>
         <module>drdsreader</module>
-        <module>sqlserverreader</module>
+        <module>sqlserverreader</module>-->
         <module>postgresqlreader</module>
-        <module>kingbaseesreader</module>
+        <!--<module>kingbaseesreader</module>
         <module>oraclereader</module>
         <module>cassandrareader</module>
         <module>oceanbasev10reader</module>
-        <module>rdbmsreader</module>
+        <module>rdbmsreader</module>-->
 
-        <module>odpsreader</module>
+        <!--<module>odpsreader</module>
         <module>otsreader</module>
         <module>otsstreamreader</module>
         <module>hbase11xreader</module>
@@ -67,9 +67,9 @@
 
         <module>ossreader</module>
         <module>hdfsreader</module>
-        <module>ftpreader</module>
+        <module>ftpreader</module>-->
         <module>txtfilereader</module>
-        <module>streamreader</module>
+        <!--<module>streamreader</module>
         <module>clickhousereader</module>
 
         <module>mongodbreader</module>
@@ -128,8 +128,8 @@
 
         &lt;!&ndash; common support module &ndash;&gt;-->
         <module>plugin-rdbms-util</module>
-        <!--<module>plugin-unstructured-storage-util</module>
-        <module>gaussdbreader</module>
+        <module>plugin-unstructured-storage-util</module>
+        <!--<module>gaussdbreader</module>
         <module>gaussdbwriter</module>
         <module>datax-example</module>-->
 

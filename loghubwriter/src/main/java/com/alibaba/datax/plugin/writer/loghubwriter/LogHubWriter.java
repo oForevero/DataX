@@ -15,19 +15,12 @@ import com.aliyun.openservices.log.request.ListShardRequest;
 import com.aliyun.openservices.log.request.PutLogsRequest;
 import com.aliyun.openservices.log.response.ListShardResponse;
 import com.aliyun.openservices.log.response.PutLogsResponse;
-
-import org.apache.commons.codec.digest.Md5Crypt;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import sun.security.provider.MD5;
 
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.Callable;
 
 /**

@@ -131,12 +131,41 @@ public final class WriterUtil {
                     .append(onDuplicateKeyUpdateString(columnHolders))
                     .toString();
         } else {
-            //如果为 postgre 插入sql 重写
-            if(dataBaseType == DataBaseType.PostgreSQL){
-                writeDataSqlTemplate = new StringBuilder().append("INSERT INTO %s (")
+            //如果为 postgres 且为更新，则执行更新指令
+            if(dataBaseType == DataBaseType.PostgreSQL && writeMode.trim().toLowerCase().startsWith("update")){
+                //获取更新参数
+                String[] updateColumn = getUpdateColumn(writeMode);
+                StringBuilder tempBuilder = new StringBuilder();
+                //设置更新参数
+                tempBuilder.append("SELECT 1 FROM %s WHERE ");
+                StringBuilder condition = new StringBuilder();
+                //生成条件参数
+                for (String columnName : updateColumn) {
+                    int i = columnHolders.indexOf(columnName);
+                    LOG.info("Column：{} index:{}", columnName, i);
+                    if(i == -1){
+                        continue;
+                    }
+                    condition.append(columnName + " = " + valueHolders.get(i) + " AND ");
+                }
+                //设置条件并切割AND
+                tempBuilder.append(condition.substring(0, condition.length()-4));
+                //如果存在则更新
+                tempBuilder.append("| UPDATE %s SET ");
+                for( int i = 0; i < columnHolders.size(); i++ ) {
+                    tempBuilder.append(columnHolders.get(i) + " = " + valueHolders.get(i) + ", ");
+                }
+                //截取逗号
+                tempBuilder.setLength(tempBuilder.length() - 2 );
+                //设置条件并切割AND
+                tempBuilder.append(" WHERE "+condition.substring(0, condition.length()-4));
+                tempBuilder.append(";")
+                        //反之新增
+                        .append("| INSERT INTO %s (")
                         .append(StringUtils.join(columnHolders, ","))
-                        .append(") VALUES(").append(StringUtils.join(valueHolders, ","))
-                        .append(")").append(onConFlictUpdateString(writeMode, columnHolders)).toString();
+                        .append(") VALUES (").append(StringUtils.join(valueHolders, ","))
+                        .append(");");
+                writeDataSqlTemplate = tempBuilder.toString();
             }else{
                 //这里是保护,如果其他错误的使用了update,需要更换为replace
                 if (writeMode.trim().toLowerCase().startsWith("update")) {
@@ -148,7 +177,22 @@ public final class WriterUtil {
                         .append(")").toString();
             }
         }
+        LOG.info("sql {}",writeDataSqlTemplate);
         return writeDataSqlTemplate;
+    }
+
+    /**
+     * 获取更新参数
+     * @param updateStr
+     * @return
+     */
+    public static String[] getUpdateColumn(String updateStr){
+        //去除空格
+        updateStr = updateStr.trim();
+        int start = updateStr.indexOf('(') + 1;
+        int end = updateStr.indexOf(')');
+        //进行截取
+        return updateStr.substring(start, end).split(",");
     }
 
     public static String onDuplicateKeyUpdateString(List<String> columnHolders){
