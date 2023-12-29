@@ -237,14 +237,12 @@ public class CommonRdbmsWriter {
             writeMode = writerSliceConfig.getString(Key.WRITE_MODE, "INSERT");
             emptyAsNull = writerSliceConfig.getBool(Key.EMPTY_AS_NULL, true);
             INSERT_OR_REPLACE_TEMPLATE = writerSliceConfig.getString(Constant.INSERT_OR_REPLACE_TEMPLATE_MARK);
-            LOG.info("isUpdate: {}, hasParam {}", writeMode.startsWith("update"),writeMode.trim().length() > 8);
             //大于8则代表存在额外参数
             if(writeMode.startsWith("update") && writeMode.trim().length() > 8){
                 this.writeRecordSql = String.format(INSERT_OR_REPLACE_TEMPLATE, this.table, this.table, this.table);
             }else {
                 this.writeRecordSql = String.format(INSERT_OR_REPLACE_TEMPLATE, this.table);
             }
-            LOG.info("sql:{}", this.writeRecordSql);
             BASIC_MESSAGE = String.format("jdbcUrl:[%s], table:[%s]",
                     this.jdbcUrl, this.table);
         }
@@ -296,6 +294,7 @@ public class CommonRdbmsWriter {
                     bufferBytes += record.getMemorySize();
 
                     if (writeBuffer.size() >= batchSize || bufferBytes >= batchByteSize) {
+                        //为更新则执行更新
                         boolean isUpdate = writeMode.startsWith("update") && writeMode.trim().length() > 8;
                         if(isUpdate){
                             doBatchInsertOrUpdate(connection, writeBuffer);
@@ -307,6 +306,7 @@ public class CommonRdbmsWriter {
                     }
                 }
                 if (!writeBuffer.isEmpty()) {
+                    //为更新则执行更新
                     boolean isUpdate = writeMode.startsWith("update") && writeMode.trim().length() > 8;
                     if(isUpdate){
                         doBatchInsertOrUpdate(connection, writeBuffer);
@@ -403,16 +403,13 @@ public class CommonRdbmsWriter {
                 insertStatement = connection.prepareStatement(sql[2]);
                 boolean isUpdate = writeMode.startsWith("update") && writeMode.trim().length() > 8;
                 for (Record record : buffer) {
-                    LOG.info("执行更新 {}", record);
                     selectStatement = fillUpdatePreparedStatement(selectStatement, record, 0);
                     ResultSet resultSet = selectStatement.executeQuery();
                     //是否查询到值，查询到则更新，反之插入
                     if(resultSet.next()){
-                        LOG.info("存在查询值：{}",resultSet);
                         updateStatement = fillUpdatePreparedStatement(updateStatement, record, 1);
                         updateStatement.executeUpdate();
                     }else{
-                        LOG.info("无查询值，直接insert");
                         insertStatement = fillUpdatePreparedStatement(insertStatement, record, 2);
                         insertStatement.execute();
                     }
@@ -495,7 +492,6 @@ public class CommonRdbmsWriter {
         protected PreparedStatement fillUpdatePreparedStatement(PreparedStatement preparedStatement, Record record, int state) throws SQLException{
             //设置查询条件参数
             String[] updateColumn = WriterUtil.getUpdateColumn(writeMode);
-            LOG.info("columnNType {}", this.resultSetMetaData);
             switch (state){
                 case 0:
                     int index = 0;
@@ -504,10 +500,8 @@ public class CommonRdbmsWriter {
                         if(i == -1){
                             continue;
                         }
-                        LOG.info("columnName: {} index: {}", columnName, i);
                         int columnSqltype = this.resultSetMetaData.getMiddle().get(i);
                         String typeName = this.resultSetMetaData.getRight().get(i);
-                        LOG.info("type: {} name: {} value: {}", columnSqltype, typeName, record.getColumn(i));
                         preparedStatement = fillPreparedStatementColumnType(preparedStatement, index, columnSqltype, typeName, record.getColumn(i));
                         index++;
                     }
@@ -516,7 +510,6 @@ public class CommonRdbmsWriter {
                     for (int i = 0; i < this.columnNumber; i++) {
                         int columnSqltype = this.resultSetMetaData.getMiddle().get(i);
                         String typeName = this.resultSetMetaData.getRight().get(i);
-                        LOG.info("type: {} name: {} value: {}", columnSqltype, typeName, record.getColumn(i));
                         preparedStatement = fillPreparedStatementColumnType(preparedStatement, i, columnSqltype, typeName, record.getColumn(i));
                     }
                     index = this.columnNumber;
@@ -526,10 +519,8 @@ public class CommonRdbmsWriter {
                         if(i == -1){
                             continue;
                         }
-                        LOG.info("columnName: {} index: {}", columnName, i);
                         int columnSqltype = this.resultSetMetaData.getMiddle().get(i);
                         String typeName = this.resultSetMetaData.getRight().get(i);
-                        LOG.info("type: {} name: {} value: {}", columnSqltype, typeName, record.getColumn(i));
                         preparedStatement = fillPreparedStatementColumnType(preparedStatement, index, columnSqltype, typeName, record.getColumn(i));
                         index++;
                     }
@@ -538,7 +529,6 @@ public class CommonRdbmsWriter {
                     for (int i = 0; i < this.columnNumber; i++) {
                         int columnSqltype = this.resultSetMetaData.getMiddle().get(i);
                         String typeName = this.resultSetMetaData.getRight().get(i);
-                        LOG.info("type: {} name: {} value: {}", columnSqltype, typeName, record.getColumn(i));
                         preparedStatement = fillPreparedStatementColumnType(preparedStatement, i, columnSqltype, typeName, record.getColumn(i));
                     }
                     break;
@@ -551,8 +541,6 @@ public class CommonRdbmsWriter {
         protected PreparedStatement fillPreparedStatementColumnType(PreparedStatement preparedStatement, int columnIndex,
                                                                     int columnSqltype, String typeName, Column column) throws SQLException {
             java.util.Date utilDate;
-            //TODO 执行时会出错，明天检查
-            LOG.info("column：{}", column);
             switch (columnSqltype) {
                 case Types.CHAR:
                 case Types.NCHAR:
@@ -685,7 +673,6 @@ public class CommonRdbmsWriter {
                                             this.resultSetMetaData.getRight()
                                                     .get(columnIndex)));
             }
-            LOG.info("prepareStatement info => {}", preparedStatement);
             return preparedStatement;
         }
 

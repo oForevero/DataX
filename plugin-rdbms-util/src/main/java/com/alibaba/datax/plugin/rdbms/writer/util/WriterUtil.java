@@ -142,7 +142,6 @@ public final class WriterUtil {
                 //生成条件参数
                 for (String columnName : updateColumn) {
                     int i = columnHolders.indexOf(columnName);
-                    LOG.info("Column：{} index:{}", columnName, i);
                     if(i == -1){
                         continue;
                     }
@@ -177,7 +176,6 @@ public final class WriterUtil {
                         .append(")").toString();
             }
         }
-        LOG.info("sql {}",writeDataSqlTemplate);
         return writeDataSqlTemplate;
     }
 
